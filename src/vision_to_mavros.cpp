@@ -3,21 +3,42 @@
 #include <tf/transform_broadcaster.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <mavros_msgs/LandingTarget.h>
 
 #include <string.h>
+
+
+float cov_pose;
+float cov_twist;
+
+void odometry_callback(const nav_msgs::Odometry::ConstPtr& msg)
+{
+  cov_pose = msg->pose.covariance[0];
+  cov_twist = msg->pose.covariance[35];
+  // ROS_INFO("Cov Pose: [%f], Twist: [%f]", cov_pose, cov_twist);
+}
+
 
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "vision_to_mavros");
 
   ros::NodeHandle node;
-  
+
+  //////////////////////////////////////////////////
+  // Subscription for covariance
+  //////////////////////////////////////////////////
+  ros::Subscriber odometry_subsriber = node.subscribe("/camera/odom/sample", 1, &odometry_callback);
+
   //////////////////////////////////////////////////
   // Variables for precision navigation
   //////////////////////////////////////////////////
   ros::Publisher camera_pose_publisher = node.advertise<geometry_msgs::PoseStamped>("vision_pose", 10);
+
+  ros::Publisher camera_pose_publisher_cov = node.advertise<geometry_msgs::PoseWithCovarianceStamped>("vision_pose_cov", 10);
 
   ros::Publisher body_path_pubisher = node.advertise<nav_msgs::Path>("body_frame/path", 1);
 
@@ -26,6 +47,8 @@ int main(int argc, char** argv)
   tf::StampedTransform transform;
 
   geometry_msgs::PoseStamped msg_body_pose;
+
+  geometry_msgs::PoseWithCovarianceStamped msg_body_pose_cov;
 
   nav_msgs::Path body_path;
 
@@ -219,8 +242,27 @@ int main(int argc, char** argv)
         msg_body_pose.pose.orientation.z = quat_body.getZ();
         msg_body_pose.pose.orientation.w = quat_body.getW();
 
-        // Publish pose of body frame in world frame
+        // Create PoseWithCovarianceStamped message to be sent
+        ros::spinOnce();
+        msg_body_pose_cov.header.stamp = transform.stamp_;
+        msg_body_pose_cov.header.frame_id = transform.frame_id_;
+        msg_body_pose_cov.pose.pose.position.x = position_body.getX();
+        msg_body_pose_cov.pose.pose.position.y = position_body.getY();
+        msg_body_pose_cov.pose.pose.position.z = position_body.getZ();
+        msg_body_pose_cov.pose.pose.orientation.x = quat_body.getX();
+        msg_body_pose_cov.pose.pose.orientation.y = quat_body.getY();
+        msg_body_pose_cov.pose.pose.orientation.z = quat_body.getZ();
+        msg_body_pose_cov.pose.pose.orientation.w = quat_body.getW();
+        msg_body_pose_cov.pose.covariance = {cov_pose, 0, 0, 0, 0, 0,
+                                             0, cov_pose, 0, 0, 0, 0,
+                                             0, 0, cov_pose, 0, 0, 0,
+                                             0, 0, 0, cov_twist, 0, 0,
+                                             0, 0, 0, 0, cov_twist, 0,
+                                             0, 0, 0, 0, 0, cov_twist};
+
+        // Publish poses of body frame in world frame
         camera_pose_publisher.publish(msg_body_pose);
+        camera_pose_publisher_cov.publish(msg_body_pose_cov);
 
         // Publish trajectory path for visualization
         body_path.header.stamp = msg_body_pose.header.stamp;
