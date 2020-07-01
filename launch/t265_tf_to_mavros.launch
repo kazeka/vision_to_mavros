@@ -28,6 +28,6 @@
     <param name="gamma_world"       value="-1.5707963" />
 
     <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="t265_to_mavros" output="screen" >
-        <remap from="vision_pose" to="/mavros/vision_pose/pose" />
+        <remap from="vision_pose_cov" to="/mavros/vision_pose/pose_cov" />
     </node>
 </launch>
